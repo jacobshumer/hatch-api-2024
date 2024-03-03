@@ -3,6 +3,7 @@ const express = require('express');
 const app = express();
 const port = 3000;
 const config = require('./config.json');
+const {join} = require("path");
 
 app.use(express.json())
 
@@ -73,20 +74,29 @@ const db = new Database('./db/hatch.db')
 
 app.post('/authentication',async (req, res) => {
     const username = req.body.username;
-    let password = bcrypt.hashSync(req.body.password)
-
-    console.log(username, password)
+    console.log(req.body.password)
+    console.log('username', username)
+    console.log('password', req.body.password)
+    let password = req.body.password
 
     // Gets a user from the database that matches the username or password, or returns nothing if there is no match
-    const user = await db.all('select * from users where username = ? and password = ?', [username, password])
+    const user = await db.all('select * from users where username = ?', [username])
         .catch(() => res.status(500))
 
     console.log("data:", user)
 
     // Checks if a user with that username and password exists
     // Checks if the database returns a user, indicating that the username and password were correct
+    console.log(user.length)
     if (user.length === 0) {
-        res.send({'success': false, 'reason': 'Invalid Credentials'})
+        res.sendStatus(400)
+        return
+    }
+
+    console.log('bcrypt', bcrypt.compareSync(password, user[0].password))
+    if (!bcrypt.compareSync(password, user[0].password)) {
+        res.sendStatus(400)
+        return
     }
 
     // Creates the token
@@ -98,18 +108,33 @@ app.post('/authentication',async (req, res) => {
         .catch(() => res.sendStatus(500))
 
     // Return the generated token
-    res.send(token)
+    res.send({"token": token})
 })
 
-app.post('/data-backup', (req, res) => {
-    // Get synthetic data from online model
+app.post('/data-backup', async (req, res) => {
+    // Get synthetic data from local file model
+    const token = req.body.token
+    console.log(token)
+    const apikey = db.get('select * from apikeys where token = ?', [token])
+        .catch(() => res.sendStatus(500))
 
+    console.log(apikey)
+    if (!apikey) {
+        res.sendStatus(400)
+        return
+    }
+    const options = {
+        root: join(__dirname)
+    }
+    const path = `data/syntheticdata${Math.floor(Math.random() * 2)}.csv`
+    console.log(path)
+    res.sendFile(path, options)
 })
 
-app.post('/data', (req, res) => {
-    // Get synthetic data from local model
-
-})
+// app.post('/data', (req, res) => {
+//     // Get synthetic data from local model
+//
+// })
 
 // Sets up the debug endpoints
 if (config.debug) {
